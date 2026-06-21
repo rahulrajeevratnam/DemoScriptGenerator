@@ -204,9 +204,14 @@
                 <option value="">&#8212; No template (generate from scratch) &#8212;</option>
               </select>
             </div>
-            <button type="button" class="btn-secondary" id="syncBtn">&#128260; Sync</button>
+            <label class="btn-secondary" style="cursor:pointer;margin:0;text-transform:none;font-size:0.85rem;padding:0.55rem 1rem;border:1px solid var(--border);border-radius:8px;display:inline-flex;align-items:center;gap:0.4rem;background:white;font-weight:600;color:var(--text);">
+              &#128196; Upload
+              <input type="file" id="templateUpload" accept=".docx,.pdf,.doc" style="display:none" />
+            </label>
           </div>
           <div class="sync-status" id="syncStatus"></div>
+          <!-- Uploaded templates list -->
+          <div id="templateList" style="margin-top:0.6rem;display:flex;flex-wrap:wrap;gap:0.4rem;"></div>
         </div>
 
       </div>
@@ -272,25 +277,45 @@
       const sel = document.getElementById('templateSelect');
       while (sel.options.length > 1) sel.remove(1);
       templates.forEach(t => { const o = document.createElement('option'); o.value = o.textContent = t; sel.appendChild(o); });
+      renderTemplateList(templates);
     } catch {}
   }
   loadTemplates();
 
-  document.getElementById('syncBtn').addEventListener('click', async () => {
-    const btn = document.getElementById('syncBtn');
+  function renderTemplateList(templates) {
+    const list = document.getElementById('templateList');
+    list.innerHTML = '';
+    templates.forEach(t => {
+      const chip = document.createElement('div');
+      chip.style.cssText = 'display:inline-flex;align-items:center;gap:0.3rem;background:#F0F7FF;border:1px solid #BFD7FF;border-radius:6px;padding:3px 8px;font-size:0.78rem;color:var(--text)';
+      chip.innerHTML = `<span>📄 ${t}</span><button onclick="deleteTemplate('${t}')" style="background:none;border:none;cursor:pointer;color:#999;font-size:0.85rem;padding:0;line-height:1" title="Remove">✕</button>`;
+      list.appendChild(chip);
+    });
+  }
+
+  async function deleteTemplate(filename) {
+    await fetch(`/api/templates/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    loadTemplates();
+  }
+
+  document.getElementById('templateUpload').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
     const status = document.getElementById('syncStatus');
-    btn.disabled = true; btn.textContent = 'Syncing...';
-    status.textContent = ''; status.className = 'sync-status';
+    status.textContent = `Uploading ${file.name}…`; status.className = 'sync-status';
+    const fd = new FormData(); fd.append('template', file);
     try {
-      const data = await fetch('/api/sync-templates', { method: 'POST' }).then(r => r.json());
-      status.textContent = data.message;
-      status.className = 'sync-status ' + (data.success ? 'ok' : 'err');
-      if (data.success) loadTemplates();
+      const data = await fetch('/api/upload-template', { method: 'POST', body: fd }).then(r => r.json());
+      if (data.success) {
+        status.textContent = `✓ ${data.filename} uploaded`; status.className = 'sync-status ok';
+        loadTemplates();
+      } else {
+        status.textContent = data.error || 'Upload failed'; status.className = 'sync-status err';
+      }
     } catch {
-      status.textContent = 'Network error.'; status.className = 'sync-status err';
-    } finally {
-      btn.disabled = false; btn.textContent = '🔄 Sync';
+      status.textContent = 'Upload error.'; status.className = 'sync-status err';
     }
+    e.target.value = '';
   });
 
   // Step detection from log messages

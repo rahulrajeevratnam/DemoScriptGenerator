@@ -7,7 +7,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { execSync } = require('child_process');
 
 const pipeline = require('./lib/pipeline');
 
@@ -21,12 +20,13 @@ const PORT = process.env.PORT || 3000;
 
 const jobs = {};
 
-const storage = multer.diskStorage({
+// Multer for video uploads
+const videoStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
   filename: (req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`)
 });
-const upload = multer({
-  storage,
+const uploadVideo = multer({
+  storage: videoStorage,
   fileFilter: (req, file, cb) => {
     const allowed = ['video/mp4', 'video/quicktime', 'video/webm'];
     if (allowed.includes(file.mimetype)) cb(null, true);
@@ -35,14 +35,38 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }
 });
 
+// Multer for template uploads
+const templateStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, path.join(__dirname, 'templates')),
+  filename: (req, file, cb) => cb(null, file.originalname)
+});
+const uploadTemplate = multer({
+  storage: templateStorage,
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/pdf',
+      'application/msword'
+    ];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(file.mimetype) || ext === '.docx' || ext === '.pdf' || ext === '.doc') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .docx and .pdf files are allowed'));
+    }
+  },
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- API: List templates
 app.get('/api/templates', (req, res) => {
   const templatesDir = path.join(__dirname, 'templates');
   try {
     const files = fs.readdirSync(templatesDir).filter(f =>
-      f.endsWith('.docx') || f.endsWith('.pdf')
+      f.endsWith('.docx') || f.endsWith('.pdf') || f.endsWith('.doc')
     );
     res.json({ templates: files });
   } catch {
@@ -50,30 +74,27 @@ app.get('/api/templates', (req, res) => {
   }
 });
 
-app.post('/api/sync-templates', (req, res) => {
-  const templatesDir = path.join(__dirname, 'templates');
-  const repoUrl = process.env.TEMPLATES_REPO || 'https://github.com/rahul-demo-scripts/templates';
+// --- API: Upload template
+app.post('/api/upload-template', uploadTemplate.single('template'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+  res.json({ success: true, filename: req.file.originalname });
+});
+
+// --- API: Delete template
+app.delete('/api/templates/:filename', (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(__dirname, 'templates', filename);
   try {
-    const isGitRepo = fs.existsSync(path.join(templatesDir, '.git'));
-    if (isGitRepo) {
-      execSync('git pull', { cwd: templatesDir, timeout: 30000 });
-      res.json({ success: true, message: 'Templates updated successfully.' });
-    } else {
-      try {
-        execSync(`git clone "${repoUrl}" "${templatesDir}"`, { timeout: 60000 });
-        res.json({ success: true, message: 'Templates cloned successfully.' });
-      } catch {
-        res.json({ success: false, message: `Templates repository not found at ${repoUrl}. You can still generate scripts without a template.` });
-      }
-    }
-  } catch (err) {
-    res.json({ success: false, message: `Sync failed: ${err.message}` });
+    fs.unlinkSync(filePath);
+    res.json({ success: true });
+  } catch {
+    res.status(404).json({ error: 'File not found' });
   }
 });
 
-app.post('/api/generate', upload.single('video'), async (req, res) => {
+// --- API: Generate demo script
+app.post('/api/generate', uploadVideo.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No video file uploaded.' });
-
   const { description, template } = req.body;
   if (!description) return res.status(400).json({ error: 'Description is required.' });
 
@@ -96,6 +117,7 @@ app.post('/api/generate', upload.single('video'), async (req, res) => {
   res.json({ jobId });
 });
 
+// --- API: SSE status stream
 app.get('/api/status/:jobId', (req, res) => {
   const job = jobs[req.params.jobId];
   if (!job) return res.status(404).json({ error: 'Job not found' });
@@ -112,12 +134,10 @@ app.get('/api/status/:jobId', (req, res) => {
     while (sentIndex < job.logs.length) send(job.logs[sentIndex++]);
     if (job.status === 'done') {
       send({ type: 'done', outputFile: job.outputFile });
-      clearInterval(interval);
-      res.end();
+      clearInterval(interval); res.end();
     } else if (job.status === 'error') {
       send({ type: 'error' });
-      clearInterval(interval);
-      res.end();
+      clearInterval(interval); res.end();
     }
   };
 
@@ -126,6 +146,7 @@ app.get('/api/status/:jobId', (req, res) => {
   req.on('close', () => clearInterval(interval));
 });
 
+// --- API: Download output
 app.get('/api/download/:filename', (req, res) => {
   const filename = path.basename(req.params.filename);
   const filePath = path.join(__dirname, 'output', filename);
