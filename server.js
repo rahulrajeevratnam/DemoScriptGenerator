@@ -109,8 +109,9 @@ app.post('/api/generate', uploadVideo.single('video'), async (req, res) => {
         jobs[jobId].logs.push({ type: 'done', message: `Done: ${path.basename(outputFile)}` });
       })
       .catch(err => {
+        console.error('[server] Pipeline error:', err);
+        jobs[jobId].logs.push({ type: 'info', message: `❌ Pipeline failed: ${err.message}` });
         jobs[jobId].status = 'error';
-        jobs[jobId].logs.push({ type: 'error', message: `Pipeline failed: ${err.message}` });
       });
   });
 
