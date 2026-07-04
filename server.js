@@ -92,6 +92,63 @@ app.delete('/api/templates/:filename', (req, res) => {
   }
 });
 
+// --- API: Calibrate frame extraction (no AI, returns frame zip)
+app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No video file uploaded.' });
+
+  const threshold = Math.min(1, Math.max(0.01, parseFloat(req.body.threshold) || 0.05));
+  const jobId = uuidv4();
+  const framesDir = path.join(__dirname, 'frames', `cal_${jobId}`);
+  fs.mkdirSync(framesDir, { recursive: true });
+
+  const ffmpeg = require('fluent-ffmpeg');
+  const ffmpegStatic = require('ffmpeg-static');
+  const archiver = require('archiver');
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+
+  try {
+    await new Promise((resolve, reject) => {
+      ffmpeg(req.file.path)
+        .outputOptions([
+          '-vf', `select='eq(n\\,0)+gt(scene\\,${threshold})',setpts=N/FRAME_RATE/TB`,
+          '-vsync', 'vfr',
+          '-q:v', '2'
+        ])
+        .output(path.join(framesDir, 'frame_%04d.jpg'))
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
+
+    const frames = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="calibration_t${threshold}_${frames.length}frames.zip"`);
+
+    const archive = archiver('zip');
+    archive.pipe(res);
+
+    // Add a summary text file
+    archive.append(
+      `Threshold: ${threshold}\nFrames captured: ${frames.length}\n\nFiles:\n${frames.join('\n')}`,
+      { name: '_summary.txt' }
+    );
+    for (const f of frames) {
+      archive.file(path.join(framesDir, f), { name: f });
+    }
+
+    archive.finalize();
+    archive.on('end', () => {
+      try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch {}
+      try { fs.unlinkSync(req.file.path); } catch {}
+    });
+  } catch (err) {
+    try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch {}
+    try { fs.unlinkSync(req.file.path); } catch {}
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- API: Generate demo script
 app.post('/api/generate', uploadVideo.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No video file uploaded.' });
