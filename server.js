@@ -103,7 +103,7 @@ app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
 
   const ffmpeg = require('fluent-ffmpeg');
   const ffmpegStatic = require('ffmpeg-static');
-  const archiver = require('archiver');
+  const { ZipArchive } = require('archiver');
   ffmpeg.setFfmpegPath(ffmpegStatic);
 
   try {
@@ -125,7 +125,7 @@ app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="calibration_t${threshold}_${frames.length}frames.zip"`);
 
-    const archive = archiver('zip');
+    const archive = new ZipArchive({ zlib: { level: 1 } });
     archive.pipe(res);
 
     // Add a summary text file
@@ -138,7 +138,7 @@ app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
     }
 
     archive.finalize();
-    archive.on('end', () => {
+    archive.on('finish', () => {
       try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch {}
       try { fs.unlinkSync(req.file.path); } catch {}
     });
