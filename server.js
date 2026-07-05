@@ -143,18 +143,19 @@ app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
 // --- API: Generate demo script
 app.post('/api/generate', uploadVideo.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No video file uploaded.' });
-  const { description, template } = req.body;
+  const { description, template, generateHtml } = req.body;
   if (!description) return res.status(400).json({ error: 'Description is required.' });
 
   const jobId = uuidv4();
-  jobs[jobId] = { status: 'running', logs: [], outputFile: null, startedAt: new Date() };
+  jobs[jobId] = { status: 'running', logs: [], outputFile: null, htmlFile: null, startedAt: new Date() };
 
   setImmediate(() => {
-    pipeline.run({ jobId, videoPath: req.file.path, description, template, jobs })
-      .then(outputFile => {
+    pipeline.run({ jobId, videoPath: req.file.path, description, template, generateHtmlOutput: generateHtml === 'true', jobs })
+      .then(({ docxPath, htmlPath }) => {
         jobs[jobId].status = 'done';
-        jobs[jobId].outputFile = outputFile;
-        jobs[jobId].logs.push({ type: 'done', message: `Done: ${path.basename(outputFile)}` });
+        jobs[jobId].outputFile = docxPath;
+        jobs[jobId].htmlFile = htmlPath;
+        jobs[jobId].logs.push({ type: 'done', message: `Done: ${path.basename(docxPath)}` });
       })
       .catch(err => {
         console.error('[server] Pipeline error:', err);
@@ -182,7 +183,7 @@ app.get('/api/status/:jobId', (req, res) => {
   const flush = () => {
     while (sentIndex < job.logs.length) send(job.logs[sentIndex++]);
     if (job.status === 'done') {
-      send({ type: 'done', outputFile: job.outputFile });
+      send({ type: 'done', outputFile: job.outputFile, htmlFile: job.htmlFile });
       clearInterval(interval); res.end();
     } else if (job.status === 'error') {
       send({ type: 'error' });
@@ -200,6 +201,11 @@ app.get('/api/download/:filename', (req, res) => {
   const filename = path.basename(req.params.filename);
   const filePath = path.join(__dirname, 'output', filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+  if (filename.endsWith('.html')) {
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.sendFile(filePath);
+  }
   res.download(filePath);
 });
 

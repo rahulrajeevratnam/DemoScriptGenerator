@@ -216,7 +216,11 @@
 
       </div>
 
-      <div class="submit-row">
+      <div class="submit-row" style="flex-direction:column;align-items:flex-end;gap:0.75rem;">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;text-transform:none;font-size:0.875rem;font-weight:500;color:var(--text);letter-spacing:0;margin:0;">
+          <input type="checkbox" name="generateHtml" value="true" id="generateHtmlCheck" style="width:16px;height:16px;accent-color:var(--sap-blue);cursor:pointer;" />
+          Also generate HTML5 interactive page
+        </label>
         <button type="submit" class="btn-primary" id="generateBtn">
           &#9654;&#xFE0E; Generate Demo Script
         </button>
@@ -243,13 +247,16 @@
   <!-- Download -->
   <div class="card download-card" id="downloadCard">
     <div class="card-title"><span class="icon">&#9989;</span> Ready</div>
-    <div class="download-box">
+    <div class="download-box" style="flex-wrap:wrap;gap:0.75rem;">
       <div class="dl-icon">&#128196;</div>
       <div class="dl-info">
         <strong>Demo script generated successfully!</strong>
         <span id="outputFileName"></span>
       </div>
-      <a id="downloadLink" href="#" class="btn-download">&#11015; Download .docx</a>
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+        <a id="downloadLink" href="#" class="btn-download">&#11015; Download .docx</a>
+        <a id="downloadHtmlLink" href="#" class="btn-download" style="display:none;background:#003366;">&#11015; Download .html</a>
+      </div>
     </div>
   </div>
 
@@ -367,6 +374,12 @@
           const fname = data.outputFile.split('/').pop().split('\\').pop();
           document.getElementById('outputFileName').textContent = fname;
           document.getElementById('downloadLink').href = '/api/download/' + fname;
+          if (data.htmlFile) {
+            const hname = data.htmlFile.split('/').pop().split('\\').pop();
+            const hlEl = document.getElementById('downloadHtmlLink');
+            hlEl.href = '/api/download/' + hname;
+            hlEl.style.display = 'inline-flex';
+          }
           document.getElementById('downloadCard').classList.add('visible');
           btn.disabled = false; btn.textContent = '▶ Generate Demo Script';
           es.close(); return;
