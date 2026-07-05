@@ -36,11 +36,11 @@
 
     <label for="threshold">Scene-change threshold</label>
     <div class="threshold-row">
-      <input type="range" id="thresholdSlider" min="1" max="30" value="5" step="1">
-      <span class="threshold-val" id="thresholdDisplay">5%</span>
+      <input type="range" id="thresholdSlider" min="1" max="30" value="2" step="1">
+      <span class="threshold-val" id="thresholdDisplay">2%</span>
     </div>
-    <input type="number" id="threshold" min="1" max="30" value="5" step="1">
-    <p class="hint">Lower = more frames (captures subtle changes). Higher = fewer frames (only big scene changes).<br>Current default: 5%</p>
+    <input type="number" id="threshold" min="1" max="30" value="2" step="1">
+    <p class="hint">Lower = more frames. Higher = fewer frames. Default: 2%.<br>Uses two-pass extraction: triggers at threshold, captures 400ms after last trigger (settled state).</p>
 
     <button id="btn" onclick="run()">Extract Frames &amp; Download ZIP</button>
     <div class="status" id="status"></div>

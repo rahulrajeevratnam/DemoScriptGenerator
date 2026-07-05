@@ -96,7 +96,8 @@ app.delete('/api/templates/:filename', (req, res) => {
 app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No video file uploaded.' });
 
-  const threshold = Math.min(1, Math.max(0.01, parseFloat(req.body.threshold) || 0.05));
+  const threshold = Math.min(1, Math.max(0.01, parseFloat(req.body.threshold) || 0.02));
+  const settleMs = 400;
   const jobId = uuidv4();
   const framesDir = path.join(__dirname, 'frames', `cal_${jobId}`);
   fs.mkdirSync(framesDir, { recursive: true });
@@ -104,23 +105,13 @@ app.post('/api/calibrate', uploadVideo.single('video'), async (req, res) => {
   const ffmpeg = require('fluent-ffmpeg');
   const ffmpegStatic = require('ffmpeg-static');
   const { ZipArchive } = require('archiver');
+  const extractFrames = require('./lib/frameExtractor');
   ffmpeg.setFfmpegPath(ffmpegStatic);
 
   try {
-    await new Promise((resolve, reject) => {
-      ffmpeg(req.file.path)
-        .outputOptions([
-          '-vf', `select='eq(n\\,0)+gt(scene\\,${threshold})',setpts=N/FRAME_RATE/TB`,
-          '-vsync', 'vfr',
-          '-q:v', '2'
-        ])
-        .output(path.join(framesDir, 'frame_%04d.jpg'))
-        .on('end', resolve)
-        .on('error', reject)
-        .run();
-    });
-
-    const frames = fs.readdirSync(framesDir).filter(f => f.endsWith('.jpg')).sort();
+    // Use the same two-pass logic as the main pipeline
+    const resizedFrames = await extractFrames(req.file.path, framesDir, (msg) => console.log('[calibrate]', msg));
+    const frames = resizedFrames.map(f => path.basename(f)).sort();
 
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="calibration_t${threshold}_${frames.length}frames.zip"`);
